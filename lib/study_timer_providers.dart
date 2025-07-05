@@ -33,7 +33,6 @@ class StudyClassesNotifier extends StateNotifier<List<StudyClass>> {
     if (!state.any((c) => c.name == name)) {
       // Add to Firestore
       await _firestore.collection('users/${user!.uid}/study_classes').add({'name': name});
-      // Local state will update via snapshot listener
     }
   }
 
@@ -46,7 +45,6 @@ class StudyClassesNotifier extends StateNotifier<List<StudyClass>> {
     for (var doc in query.docs) {
       await doc.reference.delete();
     }
-    // Local state will update via snapshot listener
   }
 
   Future<void> renameClass(String oldName, String newName) async {

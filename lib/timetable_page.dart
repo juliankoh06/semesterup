@@ -237,6 +237,24 @@ class _TimetablePageState extends State<TimetablePage> {
                       setState(() => errorMessage = 'Start and end time are required');
                       return;
                     }
+                    final startMinutes = startTime!.hour * 60 + startTime!.minute;
+                    final endMinutes = endTime!.hour * 60 + endTime!.minute;
+                    if (endMinutes <= startMinutes) {
+                      setState(() => errorMessage = 'End time must be after start time');
+                      return;
+                    }
+                    // Check for time clashes with existing classes on the same day
+                    final hasClash = _classes.any((c) {
+                      if (c.dayOfWeek != dayOfWeek) return false;
+                      final cStart = c.startTime.hour * 60 + c.startTime.minute;
+                      final cEnd = c.endTime.hour * 60 + c.endTime.minute;
+                      // Overlap if: start < cEnd && end > cStart
+                      return startMinutes < cEnd && endMinutes > cStart;
+                    });
+                    if (hasClash) {
+                      setState(() => errorMessage = 'Class time overlaps with another class on this day');
+                      return;
+                    }
                     final newClass = ClassSchedule(
                       id: DateTime.now().millisecondsSinceEpoch.toString(),
                       className: className!,

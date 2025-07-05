@@ -5,7 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'assignment_model.dart';
 import 'auth_provider.dart';
 import 'providers.dart';
-import 'reminder_settings.dart';
+import 'subtasks_page.dart';
+
 
 
 class AssignmentPage extends ConsumerWidget {
@@ -74,21 +75,29 @@ class AssignmentPage extends ConsumerWidget {
       ),
       body: assignmentsAsync.when(
         data: (assignments) {
-          // Sort assignments: active (not completed, not late) first, then completed, then late
           final now = DateTime.now();
-          List<Assignment> sorted = List.from(assignments);
-          sorted.sort((a, b) {
-            bool aLate = a.dueDate.isBefore(now) && !a.isCompleted;
-            bool bLate = b.dueDate.isBefore(now) && !b.isCompleted;
-            if (!a.isCompleted && !aLate && (b.isCompleted || bLate)) return -1;
-            if (!b.isCompleted && !bLate && (a.isCompleted || aLate)) return 1;
-            if (a.isCompleted && !b.isCompleted && !bLate) return 1;
-            if (b.isCompleted && !a.isCompleted && !aLate) return -1;
-            if (aLate && !bLate) return 1;
-            if (bLate && !aLate) return -1;
-            // Within each group, sort by due date ascending
-            return a.dueDate.compareTo(b.dueDate);
-          });
+          List<Assignment> active = [];
+          List<Assignment> completed = [];
+          List<Assignment> late = [];
+
+          // Categorize assignments
+          for (var assignment in assignments) {
+            if (assignment.isCompleted) {
+              completed.add(assignment);
+            } else if (assignment.dueDate.isBefore(now)) {
+              late.add(assignment);
+            } else {
+              active.add(assignment);
+            }
+          }
+
+          // Sort each group by due date
+          active.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+          completed.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+          late.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+
+          // Combine the lists: active first, then completed, then late
+          List<Assignment> sorted = [...active, ...completed, ...late];
           return ListView.builder(
             itemCount: sorted.length,
             itemBuilder: (context, index) {
@@ -131,7 +140,6 @@ class AssignmentPage extends ConsumerWidget {
                                       title: assignment.title,
                                       dueDate: assignment.dueDate,
                                       subtasks: assignment.subtasks,
-                                      reminderSettings: assignment.reminderSettings,
                                       isCompleted: true,
                                     );
                                     await ref.read(assignmentRepoProvider).updateAssignment(user.uid, updatedAssignment);
@@ -143,7 +151,6 @@ class AssignmentPage extends ConsumerWidget {
                                     title: assignment.title,
                                     dueDate: assignment.dueDate,
                                     subtasks: assignment.subtasks,
-                                    reminderSettings: assignment.reminderSettings,
                                     isCompleted: false,
                                   );
                                   await ref.read(assignmentRepoProvider).updateAssignment(user.uid, updatedAssignment);
@@ -178,7 +185,7 @@ class AssignmentPage extends ConsumerWidget {
                               fontSize: 14,
                             ),
                           )
-                        else if (isLate)
+                        else if (isLate) ...[
                           const Text(
                             'LATE',
                             style: TextStyle(
@@ -186,7 +193,16 @@ class AssignmentPage extends ConsumerWidget {
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
                             ),
-                          )
+                          ),
+                          Text(
+                            'Due: ${assignment.dueDate.toLocal().toString().substring(0, 16)}',
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ]
                         else
                           Text(
                             'Due: ${assignment.dueDate.toLocal().toString().substring(0, 16)}',
@@ -194,6 +210,17 @@ class AssignmentPage extends ConsumerWidget {
                               color: assignment.isCompleted ? Colors.grey : Theme.of(context).colorScheme.primary,
                             ),
                           ),
+                        if (assignment.subtasks.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Subtasks: ${(assignment.subtasks.where((s) => s.isCompleted).length / assignment.subtasks.length * 100).toStringAsFixed(0)}% complete',
+                            style: TextStyle(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     trailing: Row(
@@ -204,13 +231,159 @@ class AssignmentPage extends ConsumerWidget {
                             icon: const Icon(Icons.checklist),
                             tooltip: 'Manage Subtasks',
                             onPressed: () {
-                              _showSubtasksDialog(context, ref, assignment);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => SubtasksPage(assignment: assignment),
+                                ),
+                              );
                             },
                           ),
                           IconButton(
-                            icon: const Icon(Icons.notifications, color: Colors.blue),
+                            icon: const Icon(Icons.edit, color: Colors.orange),
+                            tooltip: 'Edit Assignment',
                             onPressed: () {
-                              _showReminderSettings(context, ref, assignment);
+                              final titleController = TextEditingController(text: assignment.title);
+                              DateTime? selectedDate = assignment.dueDate;
+                              TimeOfDay? selectedTime = TimeOfDay(hour: assignment.dueDate.hour, minute: assignment.dueDate.minute);
+                              String? errorMessage;
+                              showDialog(
+                                context: context,
+                                builder: (context) {
+                                  return StatefulBuilder(
+                                    builder: (context, setState) {
+                                      return AlertDialog(
+                                        title: const Text('Edit Assignment'),
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            TextField(
+                                              controller: titleController,
+                                              decoration: const InputDecoration(labelText: 'Title'),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: ElevatedButton.icon(
+                                                    onPressed: () async {
+                                                      final date = await showDatePicker(
+                                                        context: context,
+                                                        initialDate: selectedDate ?? DateTime.now(),
+                                                        firstDate: DateTime.now(),
+                                                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                                                      );
+                                                      if (date != null) {
+                                                        setState(() {
+                                                          selectedDate = date;
+                                                        });
+                                                      }
+                                                    },
+                                                    icon: const Icon(Icons.calendar_today),
+                                                    label: Text(selectedDate == null 
+                                                      ? 'Select Date' 
+                                                      : '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: ElevatedButton.icon(
+                                                    onPressed: () async {
+                                                      final time = await showTimePicker(
+                                                        context: context,
+                                                        initialTime: selectedTime ?? TimeOfDay.now(),
+                                                      );
+                                                      if (time != null) {
+                                                        setState(() {
+                                                          selectedTime = time;
+                                                        });
+                                                      }
+                                                    },
+                                                    icon: const Icon(Icons.access_time),
+                                                    label: Text(selectedTime == null 
+                                                      ? 'Select Time' 
+                                                      : selectedTime!.format(context)),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (errorMessage != null) ...[
+                                              const SizedBox(height: 12),
+                                              Text(errorMessage!, style: const TextStyle(color: Colors.red)),
+                                            ],
+                                          ],
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(context).pop(),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () async {
+                                              final user = ref.read(authProvider).value;
+                                              if (user == null) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('Please sign in first')),
+                                                );
+                                                return;
+                                              }
+                                              final title = titleController.text.trim();
+                                              if (title.isEmpty) {
+                                                setState(() {
+                                                  errorMessage = 'Please enter a title';
+                                                });
+                                                return;
+                                              }
+                                              if (title.length > 50) {
+                                                setState(() {
+                                                  errorMessage = 'Title is too long (max 50 characters)';
+                                                });
+                                                return;
+                                              }
+                                              if (selectedDate == null || selectedTime == null) {
+                                                setState(() {
+                                                  errorMessage = 'Please select both a date and time';
+                                                });
+                                                return;
+                                              }
+                                              DateTime dueDateTime = DateTime(
+                                                selectedDate!.year,
+                                                selectedDate!.month,
+                                                selectedDate!.day,
+                                                selectedTime!.hour,
+                                                selectedTime!.minute,
+                                              );
+                                              final updatedAssignment = Assignment(
+                                                id: assignment.id,
+                                                title: title,
+                                                dueDate: dueDateTime,
+                                                subtasks: assignment.subtasks,
+                                                isCompleted: assignment.isCompleted,
+                                              );
+                                              try {
+                                                await ref.read(assignmentRepoProvider).updateAssignment(user.uid, updatedAssignment);
+                                                if (context.mounted) {
+                                                  Navigator.of(context).pop();
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(content: Text('Assignment updated successfully!')),
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(content: Text('Failed to update: $e')),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            child: const Text('Save'),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+                                },
+                              );
                             },
                           ),
                         ] else ...[
@@ -453,10 +626,6 @@ class AssignmentPage extends ConsumerWidget {
                                   title: title,
                                   dueDate: dueDateTime,
                                   subtasks: [],
-                                  reminderSettings: ReminderSettings(
-                                    enabled: false,
-                                    timeBefore: Duration(minutes: 1440), // 1 day, but disabled
-                                  ),
                                 );
 
                                 try {
@@ -487,355 +656,12 @@ class AssignmentPage extends ConsumerWidget {
               child: const Icon(Icons.add),
               tooltip: 'Add Assignment',
             ),
+            const SizedBox(width: 16),
           ],
         ),
       ),
     );
   }
 
-  void _showReminderSettings(BuildContext context, WidgetRef ref, Assignment assignment) {
-    bool enabled = assignment.reminderSettings.enabled;
-    int minutes = assignment.reminderSettings.timeBefore.inMinutes;
-    bool multipleReminders = false;
-    List<int> reminderTimes = [minutes];
-    
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text('Reminder Settings - ${assignment.title}'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SwitchListTile(
-                      title: const Text('Enable Reminders'),
-                      subtitle: const Text('Get notified before deadline'),
-                      value: enabled,
-                      onChanged: (value) {
-                        setState(() {
-                          enabled = value;
-                        });
-                      },
-                    ),
-                    if (enabled) ...[
-                      const SizedBox(height: 16),
-                      SwitchListTile(
-                        title: const Text('Multiple Reminders'),
-                        subtitle: const Text('Set multiple reminder times'),
-                        value: multipleReminders,
-                        onChanged: (value) {
-                          setState(() {
-                            multipleReminders = value;
-                            if (value && reminderTimes.length == 1) {
-                              reminderTimes = [60, 1440]; // Default: 1 hour and 1 day
-                            } else if (!value) {
-                              reminderTimes = [reminderTimes.first];
-                            }
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      if (!multipleReminders) ...[
-                        const Text('Remind me before:', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<int>(
-                          value: minutes,
-                          decoration: const InputDecoration(
-                            labelText: 'Time',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            const DropdownMenuItem(value: 5, child: Text('5 minutes')),
-                            const DropdownMenuItem(value: 15, child: Text('15 minutes')),
-                            const DropdownMenuItem(value: 30, child: Text('30 minutes')),
-                            const DropdownMenuItem(value: 60, child: Text('1 hour')),
-                            const DropdownMenuItem(value: 120, child: Text('2 hours')),
-                            const DropdownMenuItem(value: 240, child: Text('4 hours')),
-                            const DropdownMenuItem(value: 480, child: Text('8 hours')),
-                            const DropdownMenuItem(value: 1440, child: Text('1 day')),
-                            const DropdownMenuItem(value: 2880, child: Text('2 days')),
-                            const DropdownMenuItem(value: 4320, child: Text('3 days')),
-                            const DropdownMenuItem(value: 10080, child: Text('1 week')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              minutes = value ?? 60;
-                              reminderTimes = [minutes];
-                            });
-                          },
-                        ),
-                      ] else ...[
-                        const Text('Reminder Times:', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        ...reminderTimes.asMap().entries.map((entry) {
-                          int index = entry.key;
-                          int time = entry.value;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: DropdownButtonFormField<int>(
-                                    value: time,
-                                    decoration: InputDecoration(
-                                      labelText: 'Reminder ${index + 1}',
-                                      border: const OutlineInputBorder(),
-                                    ),
-                                    items: [
-                                      const DropdownMenuItem(value: 5, child: Text('5 minutes')),
-                                      const DropdownMenuItem(value: 15, child: Text('15 minutes')),
-                                      const DropdownMenuItem(value: 30, child: Text('30 minutes')),
-                                      const DropdownMenuItem(value: 60, child: Text('1 hour')),
-                                      const DropdownMenuItem(value: 120, child: Text('2 hours')),
-                                      const DropdownMenuItem(value: 240, child: Text('4 hours')),
-                                      const DropdownMenuItem(value: 480, child: Text('8 hours')),
-                                      const DropdownMenuItem(value: 1440, child: Text('1 day')),
-                                      const DropdownMenuItem(value: 2880, child: Text('2 days')),
-                                      const DropdownMenuItem(value: 4320, child: Text('3 days')),
-                                      const DropdownMenuItem(value: 10080, child: Text('1 week')),
-                                    ],
-                                    onChanged: (value) {
-                                      setState(() {
-                                        reminderTimes[index] = value ?? 60;
-                                      });
-                                    },
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.remove_circle, color: Colors.red),
-                                  onPressed: reminderTimes.length > 1 ? () {
-                                    setState(() {
-                                      reminderTimes.removeAt(index);
-                                    });
-                                  } : null,
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        if (reminderTimes.length < 5) ...[
-                          TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                reminderTimes.add(60);
-                              });
-                            },
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add Another Reminder'),
-                          ),
-                        ],
-                      ],
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.shade200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Reminder Summary:',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              multipleReminders 
-                                ? reminderTimes.map((time) => _formatDuration(time)).join(', ')
-                                : _formatDuration(minutes),
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final user = ref.read(authProvider).value;
-                    if (user != null) {
-                      try {
-                        // For now, we'll use the first reminder time for the main reminder
-                        // In a full implementation, you'd store multiple reminder times
-                        final updatedReminderSettings = ReminderSettings(
-                          enabled: enabled,
-                          timeBefore: Duration(minutes: multipleReminders ? reminderTimes.first : minutes),
-                        );
-                        
-                        final updatedAssignment = Assignment(
-                          id: assignment.id,
-                          title: assignment.title,
-                          dueDate: assignment.dueDate,
-                          subtasks: assignment.subtasks,
-                          reminderSettings: updatedReminderSettings,
-                          isCompleted: assignment.isCompleted,
-                        );
-                        
-                        await ref.read(assignmentRepoProvider).updateAssignment(user.uid, updatedAssignment);
-                        if (context.mounted) {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                multipleReminders 
-                                  ? 'Multiple reminders set: ${reminderTimes.map((t) => _formatDuration(t)).join(', ')}'
-                                  : 'Reminder set: ${_formatDuration(minutes)} before deadline'
-                              ),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update: $e')),
-                          );
-                        }
-                      }
-                    }
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
 
-  void _showSubtasksDialog(BuildContext context, WidgetRef ref, Assignment assignment) {
-    final TextEditingController subtaskController = TextEditingController();
-    List<Subtask> localSubtasks = List<Subtask>.from(assignment.subtasks);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            int completedCount = localSubtasks.where((s) => s.isCompleted).length;
-            int totalCount = localSubtasks.length;
-            double progress = totalCount == 0 ? 0 : completedCount / totalCount;
-            return AlertDialog(
-              title: Text('Subtasks for "${assignment.title}"'),
-              content: SizedBox(
-                width: 350,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Input at the top
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: subtaskController,
-                            decoration: const InputDecoration(labelText: 'New subtask'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: () async {
-                            final user = ref.read(authProvider).value;
-                            final text = subtaskController.text.trim();
-                            if (user != null && text.isNotEmpty) {
-                              localSubtasks.add(Subtask(title: text, isCompleted: false, reminderSettings: ReminderSettings.defaultSettings()));
-                              setState(() {
-                                subtaskController.clear();
-                              });
-                              final updatedAssignment = Assignment(
-                                id: assignment.id,
-                                title: assignment.title,
-                                dueDate: assignment.dueDate,
-                                subtasks: localSubtasks,
-                                reminderSettings: assignment.reminderSettings,
-                                isCompleted: assignment.isCompleted,
-                              );
-                              await ref.read(assignmentRepoProvider).updateAssignment(user.uid, updatedAssignment);
-                            }
-                          },
-                          child: const Text('Add'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Progress bar
-                    if (totalCount > 0) ...[
-                      LinearProgressIndicator(value: progress),
-                      const SizedBox(height: 8),
-                      Text('${(progress * 100).toStringAsFixed(0)}% completed', style: const TextStyle(fontSize: 12)),
-                      const SizedBox(height: 8),
-                    ],
-                    if (localSubtasks.isEmpty)
-                      const Text('No subtasks yet.'),
-                    ...localSubtasks.asMap().entries.map((entry) {
-                      int idx = entry.key;
-                      Subtask subtask = entry.value;
-                      return ListTile(
-                        leading: Checkbox(
-                          value: subtask.isCompleted,
-                          onChanged: (val) async {
-                            final user = ref.read(authProvider).value;
-                            if (user != null) {
-                              localSubtasks[idx] = Subtask(
-                                title: subtask.title,
-                                isCompleted: val ?? false,
-                                reminderSettings: subtask.reminderSettings,
-                              );
-                              setState(() {});
-                              final updatedAssignment = Assignment(
-                                id: assignment.id,
-                                title: assignment.title,
-                                dueDate: assignment.dueDate,
-                                subtasks: localSubtasks,
-                                reminderSettings: assignment.reminderSettings,
-                                isCompleted: assignment.isCompleted,
-                              );
-                              await ref.read(assignmentRepoProvider).updateAssignment(user.uid, updatedAssignment);
-                            }
-                          },
-                        ),
-                        title: Text(subtask.title),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  String _formatDuration(int minutes) {
-    if (minutes < 60) {
-      return '$minutes minutes';
-    } else if (minutes < 1440) {
-      final hours = minutes ~/ 60;
-      return '$hours hour${hours > 1 ? 's' : ''}';
-    } else if (minutes < 10080) {
-      final days = minutes ~/ 1440;
-      return '$days day${days > 1 ? 's' : ''}';
-    } else {
-      final weeks = minutes ~/ 10080;
-      return '$weeks week${weeks > 1 ? 's' : ''}';
-    }
-  }
 }

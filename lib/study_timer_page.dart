@@ -22,7 +22,6 @@ class TimerController {
   TimerController(this.ref);
 
   void start(BuildContext context) {
-    print('DEBUG: Timer started');
     _onBreak = false;
     final minutes = ref.read(customMinutesProvider);
     ref.read(studyTimerProvider.notifier).start(minutes);
@@ -83,13 +82,10 @@ class TimerController {
   }
 
   void _onStudyComplete(BuildContext context) async {
-    print('DEBUG: _onStudyComplete called');
     final timerState = ref.read(studyTimerProvider);
     final selectedClass = ref.read(selectedClassProvider);
     final minutes = timerState.totalMinutes;
     final user = ref.read(authProvider).asData?.value;
-    print('DEBUG: User in _onStudyComplete: [32m${user?.uid ?? 'null'}');
-    print('DEBUG: Adding session: startTime=${DateTime.now()}, durationMinutes=$minutes, classOrSubject=$selectedClass');
     ref.read(studySessionHistoryProvider.notifier).addSession(
       StudySession(
         startTime: DateTime.now(),
@@ -106,7 +102,6 @@ class TimerController {
       body: 'You finished a $minutes-minute session${selectedClass != null ? " for $selectedClass" : ""}.',
     );
     // Prompt for break
-    print('DEBUG: Showing session complete dialog');
     final result = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -178,7 +173,7 @@ class TimerController {
   }
 
   void _showBreakEndDialog(BuildContext context) {
-    // Show local notification for break end
+    // Show notification for break end
     NotificationService().showStudyTimerNotification(
       title: 'Break Complete!',
       body: 'Your break is over. Ready to start another study session?',

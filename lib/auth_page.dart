@@ -190,10 +190,16 @@ class _AuthPageState extends State<AuthPage> {
                               ),
                             ),
                       TextButton(
-                        onPressed: () => setState(() {
-                          _isLogin = !_isLogin;
-                          _error = null;
-                        }),
+                        onPressed: () {
+                          setState(() {
+                            _isLogin = !_isLogin;
+                            _error = null;
+                            _emailController.clear();
+                            _passwordController.clear();
+                            _confirmController.clear();
+                            _formKey.currentState?.reset();
+                          });
+                        },
                         child: Text(
                           _isLogin
                               ? 'Don\'t have an account? Register'

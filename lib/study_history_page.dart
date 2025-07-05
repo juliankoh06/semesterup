@@ -27,16 +27,31 @@ class StudyHistoryPage extends ConsumerWidget {
           if (subjectTotals.isNotEmpty) ...[
             const Padding(
               padding: EdgeInsets.all(16.0),
-              child: Text('Last 7 Days (per Subject):', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: Text('Last 7 Days (per Subject):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: subjectTotals.entries.map((e) => Text(
-                  '${e.key}: ${e.value} min',
-                  style: const TextStyle(fontSize: 16),
-                )).toList(),
+                children: subjectTotals.entries.map((e) {
+                  final hours = e.value ~/ 60;
+                  final minutes = e.value % 60;
+                  final timeText = hours > 0 
+                    ? '$hours hour${hours > 1 ? 's' : ''} ${minutes > 0 ? '$minutes min' : ''}'
+                    : '${minutes} min';
+                  
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Text(
+                      '${e.key}: $timeText',
+                      style: const TextStyle(
+                        fontSize: 20, 
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
             const Divider(),
@@ -65,9 +80,25 @@ class StudyHistoryPage extends ConsumerWidget {
                   itemCount: sessions.length,
                   itemBuilder: (context, index) {
                       final session = sessions[index];
+                      final hours = session.durationMinutes ~/ 60;
+                      final minutes = session.durationMinutes % 60;
+                      final timeText = hours > 0 
+                        ? '$hours hour${hours > 1 ? 's' : ''} ${minutes > 0 ? '$minutes min' : ''}'
+                        : '${minutes} min';
+                      
                       return ListTile(
-                        title: Text(session.classOrSubject ?? 'No subject'),
-                        subtitle: Text('Duration: ${session.durationMinutes} min\n${session.startTime}'),
+                        title: Text(
+                          session.classOrSubject ?? 'No subject',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Duration: $timeText\n${session.startTime.toString().substring(0, 16)}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
                       );
                   },
               ), // ListView.builder

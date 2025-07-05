@@ -8,12 +8,18 @@ import 'firebase_options.dart';
 import 'notification_service.dart';
 import 'timetable_page.dart';
 import 'study_timer_page.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+Future<void> requestNotificationPermission() async {
+  await Permission.notification.request();
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await requestNotificationPermission(); // Request notification permission
   
   // Initialize notification service
   try {
